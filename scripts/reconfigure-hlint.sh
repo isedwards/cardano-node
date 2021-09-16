@@ -29,6 +29,6 @@ gen_rules() {
   echo "# This file is generated from .hlint.template.yaml by scripts/reconfigure-hlint.sh"
   echo ""
   cat .hlint.template.yaml \
-    | sed '/^# BEGIN-GENERATED/,/^# END-GENERATED/{/^# BEGIN-GENERATED/!{/^# END-GENERATED/!d}}' \
+    | gsed '/^# BEGIN-GENERATED/,/^# END-GENERATED/{/^# BEGIN-GENERATED/!{/^# END-GENERATED/!d}}' \
     | gsed -e "/^# BEGIN-GENERATED/ r "<(gen_rules)
 ) > ".hlint.yaml"
