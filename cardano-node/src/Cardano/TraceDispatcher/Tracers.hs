@@ -48,7 +48,7 @@ import qualified "trace-dispatcher" Control.Tracer as NT
 
 
 import           Cardano.Node.Configuration.Logging (EKGDirect)
-import           Cardano.Node.Types (NodeInfo)
+import           Cardano.Node.Types (NodeInfo, docNodeInfoTraceEvent)
 import           DataPoint.Forward.Utils (DataPoint)
 
 import qualified Cardano.BM.Data.Trace as Old
@@ -519,8 +519,11 @@ docTracers configFileName outputFileName _ = do
     trConfig      <- readConfiguration configFileName
     let trBase    = docTracer (Stdout MachineFormat)
         trForward = docTracer Forwarder
+        trDataPoint = docTracerDatapoint DatapointBackend
         mbTrEKG   = Just (docTracer EKGBackend)
-
+    niTr <-   mkDataPointTracer
+                trDataPoint
+                (const ["NodeInfo"])
     cdbmTr <- mkCardanoTracer'
                 trBase trForward mbTrEKG
                 "ChainDB"
@@ -754,6 +757,10 @@ docTracers configFileName outputFileName _ = do
                 severityBasicInfo
                 allPublic
 
+-- BasicInfo
+    niTrDoc <- documentTracer trConfig niTr
+      (docNodeInfoTraceEvent :: Documented NodeInfo)
+
 -- ChainDB
     cdbmTrDoc <- documentTracer trConfig cdbmTr
       (docChainDBTraceEvent :: Documented (ChainDB.TraceEvent blk))
@@ -892,7 +899,8 @@ docTracers configFileName outputFileName _ = do
     biTrDoc <- documentTracer trConfig biTr
         (docBasicInfo :: Documented BasicInfo)
 
-    let bl = cdbmTrDoc
+    let bl = niTrDoc
+            ++ cdbmTrDoc
             ++ cscTrDoc
             ++ csshTrDoc
             ++ cssbTrDoc
