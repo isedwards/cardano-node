@@ -8,6 +8,7 @@ module Cardano.Logging.DocuGenerator (
   , addFiltered
   , addLimiter
   , docTracer
+  , docTracerDatapoint
   , anyProto
   , DocuResult
 ) where
@@ -26,6 +27,7 @@ import           Data.Text.Lazy (toStrict)
 import           Data.Text.Lazy.Builder (Builder, fromString, fromText,
                      singleton)
 import           Data.Time (getZonedTime)
+import           DataPoint.Forward.Utils (DataPoint (..))
 
 data DocuResult =
   DocuTracer Builder
@@ -65,6 +67,15 @@ docTracer backendConfig = Trace $ T.arrow $ T.emit output
       docIt backendConfig (FormattedHuman co "") (lk, Just c, msg)
     output (lk, Just c@Document {}, FormattedMachine msg) =
       docIt backendConfig (FormattedMachine "") (lk, Just c, msg)
+    output (_, _, _) = pure ()
+
+docTracerDatapoint :: MonadIO m
+  => BackendConfig
+  -> Trace m DataPoint
+docTracerDatapoint backendConfig = Trace $ T.arrow $ T.emit output
+  where
+    output p@(_, Just Document {}, DataPoint m) =
+      docItDatapoint backendConfig (DataPoint m) p
     output (_, _, _) = pure ()
 
 documentTracers :: Documented a -> [Trace IO a] -> IO DocCollector
@@ -144,15 +155,37 @@ docIt backend formattedMessage (LoggingContext {..},
                         Nothing -> seq mdText (seq mdMetrics (emptyLogDoc mdText mdMetrics))))
         docMap)
 
+docItDatapoint :: MonadIO m =>
+     BackendConfig
+  -> DataPoint
+  -> (LoggingContext, Maybe TraceControl, a)
+  -> m ()
+docItDatapoint _backend _formattedMessage (LoggingContext {..},
+  Just (Document idx mdText _mdMetrics (DocCollector docRef)), _msg) = do
+  liftIO $ modifyIORef docRef (\ docMap ->
+      Map.insert
+        idx
+        ((\e -> e { ldNamespace = seq lcNamespace
+                                    (lcNamespace : ldNamespace e)
+                  , ldBackends  = [(DatapointBackend, FormattedMachine "")]
+                  })
+          (case Map.lookup idx docMap of
+                        Just e  -> e
+                        Nothing -> seq mdText (emptyLogDoc mdText [])))
+        docMap)
+
 generateTOC :: [Namespace] -> [Namespace] -> [Namespace] -> Builder
-generateTOC traces metrics _datapoints =
+generateTOC traces metrics datapoints =
        generateTOCTraces
     <> generateTOCMetrics
-  --  <> generateTOCDatapoints datapoints
+    <> generateTOCDatapoints
   where
     generateTOCTraces =
       fromText "\n1.[Trace Messages] (#trace-messages)"
       <> mconcat (zipWith (curry namespaceToToc) traces [(1 :: Int) .. ])
+    generateTOCDatapoints =
+      fromText "\n3.[Datapoints] (#datapoints)"
+      <> mconcat (zipWith (curry namespaceToToc) datapoints [(1 :: Int) .. ])
     namespaceToToc (ns, i) =
       fromText "\n1."
       <> fromText ((pack.show) i)
@@ -234,13 +267,20 @@ documentMarkdown (Documented documented) tracers = do
     pure $ messageDocs ++ concat metricsDocs
   where
     documentItem :: (Int, LogDoc) -> DocuResult
-    documentItem (_idx, ld@LogDoc {..}) = DocuTracer $
-      mconcat $ intersperse (fromText "\n\n")
-        [ namespacesBuilder (nub ldNamespace)
-        , betweenLines (fromText ldDoc)
-        , propertiesBuilder ld
-        , configBuilder ld
-        ]
+    documentItem (_idx, ld@LogDoc {..}) =
+      case ldBackends of
+        [(DatapointBackend, _)] -> DocuDatapoint $
+                    mconcat $ intersperse (fromText "\n\n")
+                      [ namespacesBuilder (nub ldNamespace)
+                      , betweenLines (fromText ldDoc)
+                      ]
+        _                     -> DocuTracer $
+                    mconcat $ intersperse (fromText "\n\n")
+                      [ namespacesBuilder (nub ldNamespace)
+                      , betweenLines (fromText ldDoc)
+                      , propertiesBuilder ld
+                      , configBuilder ld
+                      ]
 
     documentMetrics :: (Int, LogDoc) -> [([Text], DocuResult)]
     documentMetrics (_idx, ld@LogDoc {..}) =

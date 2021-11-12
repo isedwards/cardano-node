@@ -246,16 +246,19 @@ data BackendConfig =
     Forwarder
   | Stdout FormatLogging
   | EKGBackend
+  | DatapointBackend
   deriving (Eq, Ord, Show, Generic)
 
 instance AE.ToJSON BackendConfig where
   toJSON Forwarder  = AE.String "Forwarder"
+  toJSON DatapointBackend  = AE.String "DatapointBackend"
   toJSON EKGBackend = AE.String "EKGBackend"
   toJSON (Stdout f) = AE.String $ "Stdout " <> (pack . show) f
 
 instance AE.FromJSON BackendConfig where
   parseJSON (AE.String "Forwarder")            = pure Forwarder
   parseJSON (AE.String "EKGBackend")           = pure EKGBackend
+  parseJSON (AE.String "DatapointBackend")     = pure DatapointBackend  
   parseJSON (AE.String "Stdout HumanFormatColoured")
                                                = pure $ Stdout HumanFormatColoured
   parseJSON (AE.String "Stdout HumanFormatUncoloured")
